@@ -1,8 +1,8 @@
 
 version = 0.1
 
-params.indir = false
-params.reads = "${baseDir}/data/reads/*.fastq*"
+params.indir = "${baseDir}/data/reads"
+params.reads = "${params.indir}/*.fastq*"
 params.build = false
 params.mapper = "salmon"
 params.index = params.build ? params.genomes[ params.build ][ params.mapper ] ?: false : false
@@ -19,7 +19,7 @@ log.info "============================================"
 log.info "Reads          : ${params.reads}"
 log.info "Build          : ${params.build}"
 log.info "Current home   : $HOME"
-log.info "Current user   : $USER"
+// log.info "Current user   : $USER"
 log.info "Current path   : $PWD"
 log.info "Script dir     : $baseDir"
 log.info "Working dir    : $workDir"
@@ -149,6 +149,8 @@ if( params.mapper == "salmon" ){
     process salmon_quant {
         tag "$reads"
         publishDir "${params.outdir}/quant", mode: 'copy'
+        cpus 4
+        memory '8 GB'
 
         input:
         file reads from read_files_quant
@@ -169,24 +171,24 @@ if( params.mapper == "salmon" ){
 }
 
 /*
- * STEP 11 MultiQC
+ * STEP 3 - MultiQC
  */
-// process multiqc {
-//     publishDir "${params.outdir}/MultiQC", mode: 'copy'
-//
-//     input:
-//     file ('fastqc/*') from fastqc_results.flatten().toList()
-//     file ('salmon/*') from alignment_logs.flatten().toList()
-//
-//     output:
-//     file "*multiqc_report.html"
-//     file "*multiqc_data"
-//
-//     script:
-//     """
-//     multiqc -f .
-//     """
-// }
+process multiqc {
+    publishDir "${params.outdir}/MultiQC", mode: 'copy'
+
+    input:
+    file ('fastqc/*') from fastqc_results.flatten().toList()
+    file ('quant/*') from quant_results.flatten().toList()
+
+    output:
+    file "*multiqc_report.html"
+    file "*multiqc_data"
+
+    script:
+    """
+    multiqc -f .
+    """
+}
 
 workflow.onError {
     println "Oops... Pipeline execution stopped with the following message: ${workflow.errorMessage}\n"

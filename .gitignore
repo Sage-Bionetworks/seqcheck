@@ -3,3 +3,4 @@ results
 nextflow
 work
 .nextflow*
+.DS_store
