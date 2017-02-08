@@ -4,8 +4,9 @@ version = 0.1
 params.indir = false
 params.reads = "${baseDir}/data/reads/*.fastq*"
 params.build = false
+params.mapper = "salmon"
+params.index = params.build ? params.genomes[ params.build ][ params.mapper ] ?: false : false
 params.fasta = params.build ? params.genomes[ params.build ].fasta ?: false : false
-params.salmon_index = params.build ? params.genomes[ params.build ].salmon ?: false : false
 params.fasta_url = params.build ? params.genomes[ params.build ].fasta_url ?: false : false
 params.save_reference = true
 params.refdir = "${baseDir}/data/reference"
@@ -23,7 +24,7 @@ log.info "Current path   : $PWD"
 log.info "Script dir     : $baseDir"
 log.info "Working dir    : $workDir"
 log.info "Reference dir  : ${params.refdir}"
-log.info "index: ${params.salmon_index}"
+log.info "index: ${params.index}"
 log.info "fasta: ${params.fasta}"
 log.info "Output dir     : ${params.outdir}"
 log.info "============================================\n"
@@ -33,9 +34,9 @@ if( !params.build ){
     exit 1, "No reference genome specified."
 }
 else {
-    index_file = file(params.salmon_index)
+    index_file = file(params.index)
     if( !index_file.exists() ){
-        log.info "Salmon index not found: ${params.salmon_index}"
+        log.info "Quant index not found: ${params.index}"
         fasta_file = file(params.fasta)
         if( !fasta_file.exists() ){
             log.info "FASTA file not found: ${params.fasta}"
@@ -56,8 +57,8 @@ else {
     else {
         run_download_fasta = false
         fasta = false
-        salmon_index = Channel
-            .fromPath(params.salmon_index)
+        quant_index = Channel
+            .fromPath(params.index)
             .toList()
     }
 }
@@ -68,7 +69,7 @@ else {
 Channel
     .fromPath( params.reads )
     .ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}" }
-    .into { read_files_fastqc; read_files_salmon }
+    .into { read_files_fastqc; read_files_quant }
 
 /*
  * PREPROCESSING - Download FASTA
@@ -95,28 +96,30 @@ if( run_download_fasta ){
 }
 
 /*
- * PREPROCESSING - Build Salmon index
+ * PREPROCESSING - Build quant index
  */
 if( fasta ){
-    log.info "\nBuilding Salmon index from transcriptome FASTA..."
-    process make_salmon_index {
-        validExitStatus 0,137
-        tag fasta
-        publishDir path: "${params.refdir}/indexes/salmon", saveAs: { params.save_reference ? it : null }, mode: 'copy'
+    if( params.mapper == "salmon" ){
+        log.info "\nBuilding Salmon index from transcriptome FASTA..."
+        process make_salmon_index {
+            validExitStatus 0,137
+            tag fasta
+            publishDir path: "${params.refdir}/indexes/salmon", saveAs: { params.save_reference ? it : null }, mode: 'copy'
 
-        input:
-        file fasta from fasta
+            input:
+            file fasta from fasta
 
-        output:
-        file "${params.build}" into salmon_index
+            output:
+            file "${params.build}" into quant_index
 
-        script:
-        """
-        mkdir ${params.build}
-        salmon index \
-            -t $fasta \
-            -i ${params.build}
-        """
+            script:
+            """
+            mkdir ${params.build}
+            salmon index \
+                -t $fasta \
+                -i ${params.build}
+            """
+        }
     }
 }
 
@@ -140,30 +143,29 @@ process fastqc {
 }
 
 /*
- * STEP 3 - align with HISAT2
+ * STEP 2 - quantify
  */
-process salmon_quant {
-    tag "$reads"
-    publishDir "${params.outdir}/salmon", mode: 'copy'
+if( params.mapper == "salmon" ){
+    process salmon_quant {
+        tag "$reads"
+        publishDir "${params.outdir}/quant", mode: 'copy'
 
-    input:
-    file reads from read_files_salmon
-    file index from salmon_index.first()
+        input:
+        file reads from read_files_quant
+        file index from quant_index.first()
 
-    output:
-    file "${prefix}_quant" into salmon_results
+        output:
+        file "${prefix}_quant" into quant_results
 
-    script:
-    prefix = reads.toString() - ~/(\.fq)?(\.fastq)?(\.gz)?$/
-    // """
-    // salmon quant --help
-    // """
-    """
-    salmon quant \
-        -i ${index} -l U \
-        -r ${reads} \
-        -o ${prefix}_quant
-    """
+        script:
+        prefix = reads.toString() - ~/(\.fq)?(\.fastq)?(\.gz)?$/
+        """
+        salmon quant \
+            -i ${index} -l U \
+            -r ${reads} \
+            -o ${prefix}_quant
+        """
+    }
 }
 
 /*
