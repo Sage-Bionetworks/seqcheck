@@ -4,10 +4,14 @@ version = 0.1
 params.indir = "${baseDir}/data/reads"
 params.reads = "${params.indir}/*.fastq*"
 params.build = false
+params.aligner = "hisat2"
 params.mapper = "salmon"
-params.index = params.build ? params.genomes[ params.build ][ params.mapper ] ?: false : false
-params.fasta = params.build ? params.genomes[ params.build ].fasta ?: false : false
-params.fasta_url = params.build ? params.genomes[ params.build ].fasta_url ?: false : false
+params.align_index = params.build ? params.genomes[ params.build ][ params.aligner ] ?: false : false
+params.quant_index = params.build ? params.genomes[ params.build ][ params.mapper ] ?: false : false
+params.transcriptome = params.build ? params.genomes[ params.build ].transcriptome ?: false : false
+params.transcriptome_url = params.build ? params.genomes[ params.build ].transcriptome_url ?: false : false
+params.genome = params.build ? params.genomes[ params.build ].genome ?: false : false
+params.genome_url = params.build ? params.genomes[ params.build ].genome_url ?: false : false
 params.save_reference = true
 params.refdir = "${baseDir}/data/reference"
 params.outdir = "${baseDir}/results"
@@ -24,8 +28,10 @@ log.info "Current path   : $PWD"
 log.info "Script dir     : $baseDir"
 log.info "Working dir    : $workDir"
 log.info "Reference dir  : ${params.refdir}"
-log.info "index: ${params.index}"
-log.info "fasta: ${params.fasta}"
+log.info "align index: ${params.align_index}"
+log.info "genome: ${params.genome}"
+log.info "quant index: ${params.quant_index}"
+log.info "transcriptome: ${params.transcriptome}"
 log.info "Output dir     : ${params.outdir}"
 log.info "============================================\n"
 
@@ -34,31 +40,59 @@ if( !params.build ){
     exit 1, "No reference genome specified."
 }
 else {
-    index_file = file(params.index)
-    if( !index_file.exists() ){
-        log.info "Quant index not found: ${params.index}"
-        fasta_file = file(params.fasta)
-        if( !fasta_file.exists() ){
-            log.info "FASTA file not found: ${params.fasta}"
-            if( !params.download_fasta){
-                exit 1, "No URL to download FASTA provided."
+    align_index_file = file(params.align_index)
+    if( !align_index_file.exists() ){
+        log.info "Align index not found: ${params.align_index}"
+        genome_file = file(params.genome)
+        if( !genome_file.exists() ){
+            log.info "genome FASTA file not found: ${params.genome}"
+            if( !params.genome_url){
+                exit 1, "No URL to download genome FASTA provided."
             }
             else {
-                log.info "...will download from ${params.fasta_url}."
-                run_download_fasta = true
+                log.info "...will download from ${params.genome_url}."
+                run_download_genome = true
             }
         }
         else {
-            log.info "...will build index from ${params.fasta}."
-            run_download_fasta = false
-            fasta = file(params.fasta)
+            log.info "...will build index from ${params.genome}."
+            run_download_genome = false
+            genome = file(params.genome)
         }
     }
     else {
-        run_download_fasta = false
-        fasta = false
+        run_download_genome = false
+        genome = false
+        align_index = Channel
+            .fromPath("${params.align_index}*")
+            .toList()
+    }
+
+    quant_index_file = file(params.quant_index)
+    if( !quant_index_file.exists() ){
+        log.info "Quant index not found: ${params.quant_index}"
+        transcriptome_file = file(params.transcriptome)
+        if( !transcriptome_file.exists() ){
+            log.info "transcriptome FASTA file not found: ${params.transcriptome}"
+            if( !params.transcriptome_url){
+                exit 1, "No URL to download transcriptome FASTA provided."
+            }
+            else {
+                log.info "...will download from ${params.transcriptome_url}."
+                run_download_transcriptome = true
+            }
+        }
+        else {
+            log.info "...will build index from ${params.transcriptome}."
+            run_download_transcriptome = false
+            transcriptome = file(params.transcriptome)
+        }
+    }
+    else {
+        run_download_transcriptome = false
+        transcriptome = false
         quant_index = Channel
-            .fromPath(params.index)
+            .fromPath(params.quant_index)
             .toList()
     }
 }
@@ -72,20 +106,20 @@ Channel
     .into { read_files_fastqc; read_files_quant }
 
 /*
- * PREPROCESSING - Download FASTA
+ * PREPROCESSING - Download genome
  */
-if( run_download_fasta ){
-    log.info "\nDownloading FASTA from Ensembl..."
-    process download_fasta {
-        tag "${params.fasta_url}"
+if( run_download_genome ){
+    log.info "\nDownloading genome FASTA from Ensembl..."
+    process download_genome {
+        tag "${params.genome_url}"
         publishDir path: "${params.refdir}/sequence/${params.build}", saveAs: { params.save_reference ? it : null }, mode: 'copy'
 
         output:
-        file "*.{fa,fasta}" into fasta
+        file "*.{fa,fasta}" into genome
 
         script:
         """
-        curl -O -L ${params.download_fasta}
+        curl -O -L ${params.genome_url}
         if [ -f *.tar.gz ]; then
             tar xzf *.tar.gz
         elif [ -f *.gz ]; then
@@ -96,18 +130,70 @@ if( run_download_fasta ){
 }
 
 /*
+ * PREPROCESSING - Download transcriptome
+ */
+if( run_download_transcriptome ){
+    log.info "\nDownloading transcriptome FASTA from Ensembl..."
+    process download_transcriptome {
+        tag "${params.transcriptome_url}"
+        publishDir path: "${params.refdir}/sequence/${params.build}", saveAs: { params.save_reference ? it : null }, mode: 'copy'
+
+        output:
+        file "*.{fa,fasta}" into transcriptome
+
+        script:
+        """
+        curl -O -L ${params.transcriptome_url}
+        if [ -f *.tar.gz ]; then
+            tar xzf *.tar.gz
+        elif [ -f *.gz ]; then
+            gzip -d *.gz
+        fi
+        """
+    }
+}
+
+/*
+ * PREPROCESSING - Build align index
+ */
+if( genome ){
+    if( params.mapper == "hisat2" ){
+        log.info "\nBuilding HISAT2 index from genome FASTA..."
+        process make_hisat2_index {
+            tag genome
+            publishDir path: "${params.refdir}/indexes/hisat2/${params.build}", saveAs: { params.save_reference ? it : null }, mode: 'copy'
+            cpus 4
+            memory '8 GB'
+
+            input:
+            file genome from genome
+
+            output:
+            file "${params.build}.*.ht2" into align_index
+
+            script:
+            """
+            mkdir ${params.build}
+            hisat2-build \
+                $transcriptome \
+                ${params.build}
+            """
+        }
+    }
+}
+
+/*
  * PREPROCESSING - Build quant index
  */
-if( fasta ){
+if( transcriptome ){
     if( params.mapper == "salmon" ){
         log.info "\nBuilding Salmon index from transcriptome FASTA..."
         process make_salmon_index {
-            validExitStatus 0,137
-            tag fasta
+            tag transcriptome
             publishDir path: "${params.refdir}/indexes/salmon", saveAs: { params.save_reference ? it : null }, mode: 'copy'
 
             input:
-            file fasta from fasta
+            file transcriptome from transcriptome
 
             output:
             file "${params.build}" into quant_index
@@ -116,79 +202,108 @@ if( fasta ){
             """
             mkdir ${params.build}
             salmon index \
-                -t $fasta \
+                -t $transcriptome \
                 -i ${params.build}
             """
         }
     }
 }
 
-/*
- * STEP 1 - FastQC
- */
-process fastqc {
-    tag "$reads"
-    publishDir "${params.outdir}/fastqc", mode: 'copy'
+// /*
+//  * STEP 1 - FastQC
+//  */
+// process fastqc {
+//     tag "$reads"
+//     publishDir "${params.outdir}/fastqc", mode: 'copy'
+//
+//     input:
+//     file(reads) from read_files_fastqc
+//
+//     output:
+//     file "*_fastqc.{zip,html}" into fastqc_results
+//
+//     script:
+//     """
+//     fastqc -q $reads -o .
+//     """
+// }
+//
+// /*
+//  * STEP 2 - align
+//  */
+// if( params.aligner == "hisat2" ){
+//     process hisat2_align {
+//         tag "$reads"
+//         publishDir "${params.outdir}/align", mode: 'copy'
+//         cpus 4
+//         memory '8 GB'
+//
+//         input:
+//         file reads from read_files_align
+//         file index from align_index.first()
+//
+//         output:
+//         file "${prefix}.hisat2_log.txt" into align_results
+//
+//         script:
+        // index_base = align_index[0].toString() - ~/.\d.ht2/
+        // prefix = reads.toString() - ~/(\.fq)?(\.fastq)?(\.gz)?$/
+//         """
+//         hisat2 \
+//             -x $index_base -l U \
+//             -U ${reads} \
+//             2> ${prefix}.hisat2_log.txt
+//         """
+//     }
+// }
 
-    input:
-    file(reads) from read_files_fastqc
-
-    output:
-    file "*_fastqc.{zip,html}" into fastqc_results
-
-    script:
-    """
-    fastqc -q $reads -o .
-    """
-}
-
-/*
- * STEP 2 - quantify
- */
-if( params.mapper == "salmon" ){
-    process salmon_quant {
-        tag "$reads"
-        publishDir "${params.outdir}/quant", mode: 'copy'
-        cpus 4
-        memory '8 GB'
-
-        input:
-        file reads from read_files_quant
-        file index from quant_index.first()
-
-        output:
-        file "${prefix}_quant" into quant_results
-
-        script:
-        prefix = reads.toString() - ~/(\.fq)?(\.fastq)?(\.gz)?$/
-        """
-        salmon quant \
-            -i ${index} -l U \
-            -r ${reads} \
-            -o ${prefix}_quant
-        """
-    }
-}
-
-/*
- * STEP 3 - MultiQC
- */
-process multiqc {
-    publishDir "${params.outdir}/MultiQC", mode: 'copy'
-
-    input:
-    file ('fastqc/*') from fastqc_results.flatten().toList()
-    file ('quant/*') from quant_results.flatten().toList()
-
-    output:
-    file "*multiqc_report.html"
-    file "*multiqc_data"
-
-    script:
-    """
-    multiqc -f .
-    """
-}
+// /*
+//  * STEP 3 - quantify
+//  */
+// if( params.mapper == "salmon" ){
+//     process salmon_quant {
+//         tag "$reads"
+//         publishDir "${params.outdir}/quant", mode: 'copy'
+//         cpus 4
+//         memory '8 GB'
+//
+//         input:
+//         file reads from read_files_quant
+//         file index from quant_index.first()
+//
+//         output:
+//         file "${prefix}_quant" into quant_results
+//
+//         script:
+//         prefix = reads.toString() - ~/(\.fq)?(\.fastq)?(\.gz)?$/
+//         """
+//         salmon quant \
+//             -i ${index} -l U \
+//             -r ${reads} \
+//             -o ${prefix}_quant
+//         """
+//     }
+// }
+//
+// /*
+//  * STEP 4 - MultiQC
+//  */
+// process multiqc {
+//     publishDir "${params.outdir}/MultiQC", mode: 'copy'
+//
+//     input:
+//     file ('fastqc/*') from fastqc_results.flatten().toList()
+//     file ('quant/*') from quant_results.flatten().toList()
+//
+//     output:
+//     file "*multiqc_report.html"
+//     file "*multiqc_data"
+//
+//     script:
+//     """
+//     multiqc -f .
+//     """
+// }
 
 workflow.onError {
     println "Oops... Pipeline execution stopped with the following message: ${workflow.errorMessage}\n"
