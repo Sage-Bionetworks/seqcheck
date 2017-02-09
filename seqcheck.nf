@@ -28,12 +28,10 @@ log.info "Current path   : $PWD"
 log.info "Script dir     : $baseDir"
 log.info "Working dir    : $workDir"
 log.info "Reference dir  : ${params.refdir}"
-log.info "align index: ${params.align_index}"
-log.info "genome: ${params.genome}"
-log.info "quant index: ${params.quant_index}"
-log.info "transcriptome: ${params.transcriptome}"
 log.info "Output dir     : ${params.outdir}"
 log.info "============================================\n"
+
+log.info "\nPipeline started at\n: $workflow.start"
 
 // Validate inputs
 if( !params.build ){
@@ -103,7 +101,7 @@ else {
 Channel
     .fromPath( params.reads )
     .ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}" }
-    .into { read_files_fastqc; read_files_quant }
+    .into { read_files_fastqc; read_files_quant; read_files_align }
 
 /*
  * PREPROCESSING - Download genome
@@ -191,6 +189,8 @@ if( transcriptome ){
         process make_salmon_index {
             tag transcriptome
             publishDir path: "${params.refdir}/indexes/salmon", saveAs: { params.save_reference ? it : null }, mode: 'copy'
+            cpus 4
+            memory '8 GB'
 
             input:
             file transcriptome from transcriptome
@@ -209,107 +209,106 @@ if( transcriptome ){
     }
 }
 
-// /*
-//  * STEP 1 - FastQC
-//  */
-// process fastqc {
-//     tag "$reads"
-//     publishDir "${params.outdir}/fastqc", mode: 'copy'
-//
-//     input:
-//     file(reads) from read_files_fastqc
-//
-//     output:
-//     file "*_fastqc.{zip,html}" into fastqc_results
-//
-//     script:
-//     """
-//     fastqc -q $reads -o .
-//     """
-// }
-//
-// /*
-//  * STEP 2 - align
-//  */
-// if( params.aligner == "hisat2" ){
-//     process hisat2_align {
-//         tag "$reads"
-//         publishDir "${params.outdir}/align", mode: 'copy'
-//         cpus 4
-//         memory '8 GB'
-//
-//         input:
-//         file reads from read_files_align
-//         file index from align_index.first()
-//
-//         output:
-//         file "${prefix}.hisat2_log.txt" into align_results
-//
-//         script:
-        // index_base = align_index[0].toString() - ~/.\d.ht2/
-        // prefix = reads.toString() - ~/(\.fq)?(\.fastq)?(\.gz)?$/
-//         """
-//         hisat2 \
-//             -x $index_base -l U \
-//             -U ${reads} \
-//             2> ${prefix}.hisat2_log.txt
-//         """
-//     }
-// }
+/*
+ * STEP 1 - FastQC
+ */
+process fastqc {
+    tag "$reads"
+    publishDir "${params.outdir}/fastqc"
 
-// /*
-//  * STEP 3 - quantify
-//  */
-// if( params.mapper == "salmon" ){
-//     process salmon_quant {
-//         tag "$reads"
-//         publishDir "${params.outdir}/quant", mode: 'copy'
-//         cpus 4
-//         memory '8 GB'
-//
-//         input:
-//         file reads from read_files_quant
-//         file index from quant_index.first()
-//
-//         output:
-//         file "${prefix}_quant" into quant_results
-//
-//         script:
-//         prefix = reads.toString() - ~/(\.fq)?(\.fastq)?(\.gz)?$/
-//         """
-//         salmon quant \
-//             -i ${index} -l U \
-//             -r ${reads} \
-//             -o ${prefix}_quant
-//         """
-//     }
-// }
-//
-// /*
-//  * STEP 4 - MultiQC
-//  */
-// process multiqc {
-//     publishDir "${params.outdir}/MultiQC", mode: 'copy'
-//
-//     input:
-//     file ('fastqc/*') from fastqc_results.flatten().toList()
-//     file ('quant/*') from quant_results.flatten().toList()
-//
-//     output:
-//     file "*multiqc_report.html"
-//     file "*multiqc_data"
-//
-//     script:
-//     """
-//     multiqc -f .
-//     """
-// }
+    input:
+    file(reads) from read_files_fastqc
 
-workflow.onError {
-    println "Oops... Pipeline execution stopped with the following message: ${workflow.errorMessage}\n"
+    output:
+    file "*_fastqc.{zip,html}" into fastqc_results
+
+    script:
+    """
+    fastqc -q $reads -o .
+    """
+}
+
+/*
+ * STEP 2 - align
+ */
+if( params.aligner == "hisat2" ){
+    process hisat2_align {
+        tag "$reads"
+        publishDir "${params.outdir}/align"
+        cpus 4
+        memory '8 GB'
+
+        input:
+        file reads from read_files_align
+        file index from align_index.first()
+
+        output:
+        file "${prefix}.txt" into align_results
+
+        script:
+        index_base = index[0].toString() - ~/.\d.ht2/
+        prefix = reads.toString() - ~/(\.fq)?(\.fastq)?(\.gz)?$/
+        """
+        hisat2 \
+            -x ${index_base} \
+            -U ${reads} \
+            -S out.sam \
+            2> ${prefix}.txt
+        """
+    }
+}
+
+/*
+ * STEP 3 - quantify
+ */
+if( params.mapper == "salmon" ){
+    process salmon_quant {
+        tag "$reads"
+        publishDir "${params.outdir}/quant"
+        cpus 4
+        memory '8 GB'
+
+        input:
+        file reads from read_files_quant
+        file index from quant_index.first()
+
+        output:
+        file "${prefix}" into quant_results
+
+        script:
+        prefix = reads.toString() - ~/(\.fq)?(\.fastq)?(\.gz)?$/
+        """
+        salmon quant \
+            -i ${index} -l U \
+            -r ${reads} \
+            -o ${prefix}
+        """
+    }
+}
+
+/*
+ * STEP 4 - MultiQC
+ */
+process multiqc {
+    tag "all samples"
+    publishDir "${params.outdir}/multiqc", mode: 'copy'
+
+    input:
+    file ('fastqc/*') from fastqc_results.flatten().toList()
+    file ('align/*') from align_results.flatten().toList()
+    file ('quant/*') from quant_results.flatten().toList()
+
+    output:
+    file "*multiqc_report.html"
+    file "*multiqc_data"
+
+    script:
+    """
+    multiqc -f .
+    """
 }
 
 workflow.onComplete {
-    log.info "Pipeline completed at: $workflow.complete"
+    log.info "\nPipeline completed at: ${workflow.complete} (in ${workflow.duration})"
     log.info "Execution status: ${ workflow.success ? 'OK' : 'failed' }"
 }
