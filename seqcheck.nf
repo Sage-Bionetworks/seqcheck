@@ -3,6 +3,7 @@ version = "0.1.0"
 
 params.syndir = false
 params.indir = "${baseDir}/data/reads"
+params.skip = false
 // params.reads = params.syndir ? false : "${params.indir}/*.fastq*"
 params.build = false
 params.aligner = "hisat2"
@@ -232,21 +233,28 @@ if( params.syndir ){
      */
     log.info "\nDownloading individual FASTQ files..."
     process download_fastq {
-        tag "${syn_id} -> ${read_file}"
+        tag "${syn_id} -> ${reads}"
 
         input:
         val fastq_entity from fastq_entities
 
         output:
-        stdout into syn_names
-        val read_file into read_files_fastqc, read_files_quant, read_files_align
+        file reads into read_files_fastqc, read_files_quant, read_files_align
 
         script:
         syn_id = fastq_entity['file.id']
-        read_file = "${params.indir}/${fastq_entity['file.name']}"
+        reads = "${params.indir}/${fastq_entity['file.name']}"
+        reads_file = file(reads)
+        if( !reads_file.exists() ){
         """
         synapse -s get --downloadLocation ${params.indir} ${syn_id}
         """
+        }
+        else {
+            """
+            echo 'File exists; skipping.'
+            """
+        }
     }
 }
 else {
@@ -282,7 +290,7 @@ process fastqc {
 /*
  * STEP 2 - align
  */
-if( params.aligner == "hisat2" ){
+if( params.aligner == "hisat2" && !params.skip ){
     process hisat2_align {
         tag "$reads"
         publishDir "${params.outdir}/align"
@@ -312,7 +320,7 @@ if( params.aligner == "hisat2" ){
 /*
  * STEP 3 - quantify
  */
-if( params.mapper == "salmon" ){
+if( params.mapper == "salmon" && !params.skip ){
     process salmon_quant {
         tag "$reads"
         publishDir "${params.outdir}/quant"
@@ -340,6 +348,7 @@ if( params.mapper == "salmon" ){
 /*
  * STEP 4 - MultiQC
  */
+if( !params.skip ){
 process multiqc {
     tag "all samples"
     publishDir "${params.outdir}/multiqc", mode: 'copy'
@@ -357,6 +366,7 @@ process multiqc {
     """
     multiqc -f .
     """
+}
 }
 
 workflow.onComplete {
