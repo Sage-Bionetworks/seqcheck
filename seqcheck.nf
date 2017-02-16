@@ -210,23 +210,23 @@ if( transcriptome ){
 if( params.syndir ){
     log.info "\nRetrieving Synapse IDs for FASTQs in entity '${params.syndir}'..."
     process locate_fastqs {
-     tag params.syndir
+        tag params.syndir
 
-     output:
-     stdout query_result
+        output:
+        stdout query_result
 
-     script:
-     """
-     synapse -s query "select id,name from file where parentId=='${params.syndir}' and fileFormat=='fastq'"
-     """
+        script:
+        """
+        synapse -s query "select id,name from file where parentId=='${params.syndir}' and fileFormat=='fastq'"
+        """
     }
 
     /*
      * Split Synapse IDs and create channel
      */
     query_result
-     .splitCsv(sep: '\t', header: true)
-     .into { fastq_entities }
+        .splitCsv(sep: '\t', header: true)
+        .into { fastq_entities }
 
     /*
      * Download FASTQs and create channels for input read files
@@ -234,6 +234,7 @@ if( params.syndir ){
     log.info "\nDownloading individual FASTQ files..."
     process download_fastq {
         tag "${syn_id} -> ${reads}"
+        publishDir "${params.indir}", overwrite: true
 
         input:
         val fastq_entity from fastq_entities
@@ -243,18 +244,18 @@ if( params.syndir ){
 
         script:
         syn_id = fastq_entity['file.id']
-        reads = "${params.indir}/${fastq_entity['file.name']}"
+        reads = "${fastq_entity['file.name']}"
         reads_file = file(reads)
-        if( !reads_file.exists() ){
+        // if( !reads_file.exists() ){
         """
-        synapse -s get --downloadLocation ${params.indir} ${syn_id}
+        synapse -s get ${syn_id}
         """
-        }
-        else {
-            """
-            echo 'File exists; skipping.'
-            """
-        }
+        // }
+        // else {
+        //     """
+        //     echo 'File exists; skipping.'
+        //     """
+        // }
     }
 }
 else {
@@ -273,7 +274,7 @@ else {
  */
 process fastqc {
     tag "$reads"
-    publishDir "${params.outdir}/fastqc"
+    publishDir "${params.outdir}/fastqc", overwrite: true
 
     input:
     file(reads) from read_files_fastqc
