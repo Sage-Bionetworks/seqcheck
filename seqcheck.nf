@@ -1,8 +1,9 @@
 
-version = 0.1
+version = "0.1.0"
 
+params.syndir = false
 params.indir = "${baseDir}/data/reads"
-params.reads = "${params.indir}/*.fastq*"
+// params.reads = params.syndir ? false : "${params.indir}/*.fastq*"
 params.build = false
 params.aligner = "hisat2"
 params.mapper = "salmon"
@@ -17,18 +18,19 @@ params.refdir = "${baseDir}/data/reference"
 params.outdir = "${baseDir}/results"
 
 
-log.info "============================================"
+log.info "============================================="
 log.info "seqcheck : Sequence data sanity check  v${version}"
-log.info "============================================"
-log.info "Reads          : ${params.reads}"
-log.info "Build          : ${params.build}"
-log.info "Current home   : $HOME"
-// log.info "Current user   : $USER"
-log.info "Current path   : $PWD"
-log.info "Script dir     : $baseDir"
-log.info "Working dir    : $workDir"
-log.info "Reference dir  : ${params.refdir}"
-log.info "Output dir     : ${params.outdir}"
+log.info "============================================="
+// log.info "Reads            : ${params.reads}"
+log.info "Build            : ${params.build}"
+log.info "Current home     : $HOME"
+log.info "Current path     : $PWD"
+log.info "Script dir       : $baseDir"
+log.info "Working dir      : $workDir"
+log.info "Synapse folder?  : ${params.syndir}"
+log.info "Input dir        : ${params.indir}"
+log.info "Reference dir    : ${params.refdir}"
+log.info "Output dir       : ${params.outdir}"
 log.info "============================================\n"
 
 log.info "\nPipeline started at\n: $workflow.start"
@@ -94,14 +96,6 @@ else {
             .toList()
     }
 }
-
-/*
- * Create a channel for input read files
- */
-Channel
-    .fromPath( params.reads )
-    .ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}" }
-    .into { read_files_fastqc; read_files_quant; read_files_align }
 
 /*
  * PREPROCESSING - Download genome
@@ -173,7 +167,7 @@ if( genome ){
             """
             mkdir ${params.build}
             hisat2-build \
-                $transcriptome \
+                $genome \
                 ${params.build}
             """
         }
@@ -207,6 +201,63 @@ if( transcriptome ){
             """
         }
     }
+}
+
+/*
+ * STEP 0 - Download FASTQs from Synapse
+ */
+if( params.syndir ){
+    log.info "\nRetrieving Synapse IDs for FASTQs in entity '${params.syndir}'..."
+    process locate_fastqs {
+     tag params.syndir
+
+     output:
+     stdout query_result
+
+     script:
+     """
+     synapse -s query "select id,name from file where parentId=='${params.syndir}' and fileFormat=='fastq'"
+     """
+    }
+
+    /*
+     * Split Synapse IDs and create channel
+     */
+    query_result
+     .splitCsv(sep: '\t', header: true)
+     .into { fastq_entities }
+
+    /*
+     * Download FASTQs and create channels for input read files
+     */
+    log.info "\nDownloading individual FASTQ files..."
+    process download_fastq {
+        tag "${syn_id} -> ${read_file}"
+
+        input:
+        val fastq_entity from fastq_entities
+
+        output:
+        stdout into syn_names
+        val read_file into read_files_fastqc, read_files_quant, read_files_align
+
+        script:
+        syn_id = fastq_entity['file.id']
+        read_file = "${params.indir}/${fastq_entity['file.name']}"
+        """
+        synapse -s get --downloadLocation ${params.indir} ${syn_id}
+        """
+    }
+}
+else {
+    /*
+     * Create channels for input read files
+     */
+    pattern = "${params.indir}/*.fastq*"
+    Channel
+        .fromPath( pattern )
+        .ifEmpty { exit 1, "Cannot find any reads matching: ${pattern}" }
+        .into { read_files_fastqc; read_files_quant; read_files_align }
 }
 
 /*
