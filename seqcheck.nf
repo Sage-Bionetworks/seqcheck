@@ -150,7 +150,7 @@ if( run_download_transcriptome ){
  * PREPROCESSING - Build align index
  */
 if( genome ){
-    if( params.mapper == "hisat2" ){
+    if( params.aligner == "hisat2" ){
         log.info "\nBuilding HISAT2 index from genome FASTA..."
         process make_hisat2_index {
             tag genome
@@ -234,7 +234,7 @@ if( params.syndir ){
     log.info "\nDownloading individual FASTQ files..."
     process download_fastq {
         tag "${syn_id} -> ${reads}"
-        publishDir "${params.indir}", overwrite: true
+        publishDir "${params.indir}", overwrite: true, mode: 'copy'
 
         input:
         val fastq_entity from fastq_entities
@@ -312,7 +312,8 @@ if( params.aligner == "hisat2" && !params.skip ){
         hisat2 \
             -x ${index_base} \
             -U ${reads} \
-            -S out.sam \
+            -p ${task.cpus} \
+            1> /dev/null \ # don't keep alignments
             2> ${prefix}.txt
         """
     }
@@ -341,6 +342,7 @@ if( params.mapper == "salmon" && !params.skip ){
         salmon quant \
             -i ${index} -l U \
             -r ${reads} \
+            -p ${task.cpus} \
             -o ${prefix}
         """
     }
