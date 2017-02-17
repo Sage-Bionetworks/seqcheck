@@ -313,7 +313,7 @@ if( params.aligner == "hisat2" && !params.skip ){
             -x ${index_base} \
             -U ${reads} \
             -p ${task.cpus} \
-            1> /dev/null \ # don't keep alignments
+            1> /dev/null \
             2> ${prefix}.txt
         """
     }
