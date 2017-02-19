@@ -155,8 +155,8 @@ if( genome ){
         process make_hisat2_index {
             tag genome
             publishDir path: "${params.refdir}/indexes/hisat2/${params.build}", saveAs: { params.save_reference ? it : null }, mode: 'copy'
-            cpus 4
-            memory '8 GB'
+            cpus 8
+            memory '32 GB'
 
             input:
             file genome from genome
@@ -168,6 +168,7 @@ if( genome ){
             """
             mkdir ${params.build}
             hisat2-build \
+                -p ${task.cpus} \
                 $genome \
                 ${params.build}
             """
@@ -184,8 +185,8 @@ if( transcriptome ){
         process make_salmon_index {
             tag transcriptome
             publishDir path: "${params.refdir}/indexes/salmon", saveAs: { params.save_reference ? it : null }, mode: 'copy'
-            cpus 4
-            memory '8 GB'
+            cpus 8
+            memory '32 GB'
 
             input:
             file transcriptome from transcriptome
@@ -197,6 +198,7 @@ if( transcriptome ){
             """
             mkdir ${params.build}
             salmon index \
+                -p ${task.cpus} \
                 -t $transcriptome \
                 -i ${params.build}
             """
@@ -217,7 +219,7 @@ if( params.syndir ){
 
         script:
         """
-        synapse -s query "select id,name from file where parentId=='${params.syndir}' and fileFormat=='fastq'"
+        synapse -s query "select id,name from file where parentId=='${params.syndir}'"
         """
     }
 
@@ -295,8 +297,8 @@ if( params.aligner == "hisat2" && !params.skip ){
     process hisat2_align {
         tag "$reads"
         publishDir "${params.outdir}/align"
-        cpus 4
-        memory '8 GB'
+        cpus 8
+        memory '32 GB'
 
         input:
         file reads from read_files_align
@@ -326,8 +328,8 @@ if( params.mapper == "salmon" && !params.skip ){
     process salmon_quant {
         tag "$reads"
         publishDir "${params.outdir}/quant"
-        cpus 4
-        memory '8 GB'
+        cpus 8
+        memory '32 GB'
 
         input:
         file reads from read_files_quant
