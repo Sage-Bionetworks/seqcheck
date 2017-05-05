@@ -1,10 +1,11 @@
 
 version = "0.1.0"
 
+params.config = "/efs/.synapseConfig"
 params.syndir = false
 params.indir = "${baseDir}/data/reads"
 params.skip = false
-// params.reads = params.syndir ? false : "${params.indir}/*.fastq*"
+params.reads = params.syndir ? false : "${params.indir}/*.fastq*"
 params.build = false
 params.aligner = "hisat2"
 params.mapper = "salmon"
@@ -22,10 +23,11 @@ params.outdir = "${baseDir}/results"
 log.info "============================================="
 log.info "seqcheck : Sequence data sanity check  v${version}"
 log.info "============================================="
-// log.info "Reads            : ${params.reads}"
+log.info "Reads            : ${params.reads}"
 log.info "Build            : ${params.build}"
 log.info "Current home     : $HOME"
 log.info "Current path     : $PWD"
+log.info "Config path      : ${params.config}"
 log.info "Script dir       : $baseDir"
 log.info "Working dir      : $workDir"
 log.info "Synapse folder?  : ${params.syndir}"
@@ -155,8 +157,6 @@ if( genome ){
         process make_hisat2_index {
             tag genome
             publishDir path: "${params.refdir}/indexes/hisat2/${params.build}", saveAs: { params.save_reference ? it : null }, mode: 'copy'
-            cpus 8
-            memory '32 GB'
 
             input:
             file genome from genome
@@ -185,8 +185,6 @@ if( transcriptome ){
         process make_salmon_index {
             tag transcriptome
             publishDir path: "${params.refdir}/indexes/salmon", saveAs: { params.save_reference ? it : null }, mode: 'copy'
-            cpus 8
-            memory '32 GB'
 
             input:
             file transcriptome from transcriptome
@@ -199,7 +197,7 @@ if( transcriptome ){
             mkdir ${params.build}
             salmon index \
                 -p ${task.cpus} \
-                -t $transcriptome \
+                -t ${transcriptome} \
                 -i ${params.build}
             """
         }
@@ -248,16 +246,9 @@ if( params.syndir ){
         syn_id = fastq_entity['file.id']
         reads = "${fastq_entity['file.name']}"
         reads_file = file(reads)
-        // if( !reads_file.exists() ){
         """
-        synapse -s get ${syn_id}
+        synapse --c ${params.config} -s get ${syn_id}
         """
-        // }
-        // else {
-        //     """
-        //     echo 'File exists; skipping.'
-        //     """
-        // }
     }
 }
 else {
@@ -297,8 +288,6 @@ if( params.aligner == "hisat2" && !params.skip ){
     process hisat2_align {
         tag "$reads"
         publishDir "${params.outdir}/align"
-        cpus 8
-        memory '32 GB'
 
         input:
         file reads from read_files_align
@@ -328,8 +317,6 @@ if( params.mapper == "salmon" && !params.skip ){
     process salmon_quant {
         tag "$reads"
         publishDir "${params.outdir}/quant"
-        cpus 8
-        memory '32 GB'
 
         input:
         file reads from read_files_quant

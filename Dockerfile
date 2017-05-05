@@ -15,4 +15,5 @@ LABEL tags="Genomics"
 # Maintainer
 MAINTAINER James Eddy <james.a.eddy@gmail.com>
 
-RUN conda install synapseclient=1.5 fastqc=0.11.5 hisat2=2.0.5 salmon=0.7.2 multiqc=0.9.1
+RUN conda install fastqc=0.11.5 hisat2=2.0.5 salmon=0.8.2 multiqc=0.9.1
+RUN pip install synapseclient==1.6.2
