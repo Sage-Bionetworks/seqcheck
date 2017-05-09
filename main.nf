@@ -217,7 +217,7 @@ if( params.syndir ){
 
         script:
         """
-        synapse -s query "select id,name from file where parentId=='${params.syndir}'"
+        synapse --c ${params.config} -s query "select id,name from file where parentId=='${params.syndir}'"
         """
     }
 
