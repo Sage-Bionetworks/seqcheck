@@ -100,6 +100,10 @@ else {
     }
 }
 
+// Create channels for Synapse credentials
+query_credentials = Channel.fromPath(params.config)
+get_credentials = Channel.fromPath(params.config)
+
 /*
  * PREPROCESSING - Download genome
  */
@@ -212,12 +216,15 @@ if( params.syndir ){
     process locate_fastqs {
         tag params.syndir
 
+        input:
+        file config from query_credentials
+
         output:
         stdout query_result
 
         script:
         """
-        synapse --c ${params.config} -s query "select id,name from file where parentId=='${params.syndir}'"
+        synapse --c ${config} -s query "select id,name from file where parentId=='${params.syndir}'"
         """
     }
 
@@ -237,6 +244,7 @@ if( params.syndir ){
         publishDir "${params.indir}", overwrite: true, mode: 'copy'
 
         input:
+        file config from get_credentials
         val fastq_entity from fastq_entities
 
         output:
@@ -245,9 +253,9 @@ if( params.syndir ){
         script:
         syn_id = fastq_entity['file.id']
         reads = "${fastq_entity['file.name']}"
-        reads_file = file(reads)
+        // reads_file = file(reads)
         """
-        synapse --c ${params.config} -s get ${syn_id}
+        synapse --c ${config} -s get ${syn_id}
         """
     }
 }
