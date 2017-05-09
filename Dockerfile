@@ -24,8 +24,12 @@ RUN conda install fastqc=0.11.5 hisat2=2.0.5 salmon=0.8.2 multiqc=0.9.1
 
 USER root
 
-# RUN git clone git://github.com/Sage-Bionetworks/synapsePythonClient.git && \
-#     cd synapsePythonClient && \
-#     git checkout v1.6.2 && \
-#     python setup.py install
-RUN pip install synapseclient==1.6.2
+# set version here to minimize need for edits below
+# ENV VERSION=v1.6.2
+ENV BRANCH=develop
+ENV VERSION=6ba6a3ebde81fe8ed4d0c231ab42c613aa03334f
+
+RUN git clone -b ${BRANCH} git://github.com/Sage-Bionetworks/synapsePythonClient.git && \
+    cd synapsePythonClient && \
+    git checkout ${VERSION} && \
+    python setup.py develop
