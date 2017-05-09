@@ -37,4 +37,4 @@ RUN apt-get update && \
 RUN git clone -b ${BRANCH} git://github.com/Sage-Bionetworks/synapsePythonClient.git && \
     cd synapsePythonClient && \
     git checkout ${VERSION} && \
-    python setup.py develop
+    python setup.py install
