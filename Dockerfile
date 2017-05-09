@@ -27,4 +27,4 @@ USER root
 RUN git clone git://github.com/Sage-Bionetworks/synapsePythonClient.git && \
     cd synapsePythonClient && \
     git checkout v1.6.2 && \
-    python setup.py
+    python setup.py install
