@@ -135,7 +135,7 @@ if( run_download_transcriptome ){
     log.info "\nDownloading transcriptome FASTA from Ensembl..."
     process download_transcriptome {
         tag "${params.transcriptome_url}"
-        publishDir path: "${params.refdir}/sequence/${params.build}", saveAs: { params.save_reference ? it : null }
+        publishDir path: "${params.refdir}/sequence/${params.build}", saveAs: { params.save_reference ? it : null }, mode: 'copy'
 
         output:
         file "*.{fa,fasta}" into transcriptome
@@ -160,7 +160,7 @@ if( genome ){
         log.info "\nBuilding HISAT2 index from genome FASTA..."
         process make_hisat2_index {
             tag genome
-            publishDir path: "${params.refdir}/indexes/hisat2/${params.build}", saveAs: { params.save_reference ? it : null }
+            publishDir path: "${params.refdir}/indexes/hisat2/${params.build}", saveAs: { params.save_reference ? it : null }, mode: 'copy'
 
             input:
             file genome from genome
@@ -188,7 +188,7 @@ if( transcriptome ){
         log.info "\nBuilding Salmon index from transcriptome FASTA..."
         process make_salmon_index {
             tag transcriptome
-            publishDir path: "${params.refdir}/indexes/salmon", saveAs: { params.save_reference ? it : null }
+            publishDir path: "${params.refdir}/indexes/salmon", saveAs: { params.save_reference ? it : null }, mode: 'copy'
 
             input:
             file transcriptome from transcriptome
@@ -241,7 +241,7 @@ if( params.syndir ){
     log.info "\nDownloading individual FASTQ files..."
     process download_fastq {
         tag "${syn_id} -> ${reads}"
-        publishDir "${params.indir}", overwrite: true
+        publishDir "${params.indir}", overwrite: true, mode: 'copy'
 
         input:
         file config from get_credentials
