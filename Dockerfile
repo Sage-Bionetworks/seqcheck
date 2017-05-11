@@ -3,9 +3,9 @@ FROM biocontainers/biocontainers:latest
 
 # Metadata
 LABEL base.image="biocontainers:latest"
-LABEL version="2"
+LABEL version="1"
 LABEL software="seqcheck-deps"
-LABEL software.version="0.1"
+LABEL software.version="0.1.1"
 LABEL description="dependencies for mini-pipeline to sanity check new sequencing data on Synapse"
 LABEL website="https://github.com/jaeddy/seqcheck"
 LABEL documentation="https://github.com/jaeddy/seqcheck"
